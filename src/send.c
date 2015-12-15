@@ -49,7 +49,7 @@ void get_freq(int nibble, int* low, int* high)
 int send_tones(int low, int high)
 {
 #define GENERATE_TONE(tone)  \
-  sin(2 * M_PI * ((double)i / (SAMPLE_RATE / tone)))
+  sin(2 * M_PI * ((double)i / (SAMPLE_RATE / (tone))))
   
   static UTYPE buffer[SAMPLE_RATE / 1000 * DURATION];
   snd_pcm_sframes_t frames;
@@ -57,7 +57,9 @@ int send_tones(int low, int high)
   size_t i;
   
   for (i = 0; i < N(buffer); i++)
-    buffer[i] = (GENERATE_TONE(low) + GENERATE_TONE(high)) * (SMAX / 2) - SMIN;
+    buffer[i] = (GENERATE_TONE(low * 1) + GENERATE_TONE(high * 1) + 
+		 GENERATE_TONE(low * 4) + GENERATE_TONE(high * 4)) *
+                (SMAX / 4) - SMIN;
   
   r = frames = snd_pcm_writei(sound_handle, buffer, N(buffer));
   if (frames < 0)
