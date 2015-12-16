@@ -17,13 +17,14 @@
 #include "common.h"
 
 #include <stdio.h>
-#include <math.h> /* -lm */
 #include <stdint.h>
-#include <alsa/asoundlib.h> /* dep: alsa-lib (pkg-config alsa) */
 #include <signal.h>
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
+#include <math.h> /* -lm */
+#include <alsa/asoundlib.h> /* dep: alsa-lib (pkg-config alsa) */
 
 
 
@@ -35,6 +36,9 @@
 #define SAMPLE_RATE  52000   /* Hz */
 #define DURATION     100     /* ms */ /* 100 ms → 10 Bd → 5 B/s */
 #define LATENCY      100000  /* µs */
+
+#define PARITY            2
+#define USE_EXTRA_PARITY  0
 
 
 
@@ -150,6 +154,7 @@ static int send_nibble(int n)
  */
 static int send_byte(int c)
 {
+  printf("%i\n", c);
   if (send_nibble((c >> 0) & 0x0F))  return -1;
   if (send_nibble((c >> 4) & 0x0F))  return -1;
   return 0;
@@ -173,38 +178,45 @@ static int send_byte(int c)
  */
 static int send_byte_with_ecc(int c)
 {
-  static int data[4];
+  static int data[(1 << PARITY) - PARITY - 1];
   static int ptr = 0;
-  int code[8];
-  int i, rc = 1;
+  static int code[(1 << PARITY) - 1 + USE_EXTRA_PARITY];
+  int i, j, d, p;
   
   /* Fill buffer. */
   if (c < 0)
     {
       if (ptr > 0)
-	while (ptr < 4)
+	while (ptr < sizeof(data) / sizeof(*data))
 	  data[ptr++] = -c;
     }
   else
     data[ptr++] = c;
   
   /* Is it full? */
-  if (ptr < 4)
+  if (ptr < sizeof(data) / sizeof(*data))
     return 0;
   ptr = 0;
   
   /* Hamming code. */
-  code[0] = data[0] ^ data[1] ^           data[3];
-  code[1] = data[0] ^           data[2] ^ data[3];
-  code[2] = data[0];
-  code[3] =           data[1] ^ data[2] ^ data[3];
-  code[4] =           data[1];
-  code[5] =                     data[2];
-  code[6] =                               data[3];
-  code[7] = data[0] ^ data[1] ^ data[2] ^ data[3];
+  memset(code, 0, sizeof(code));
+  for (i = 1, j = 0; i <= (1 << PARITY) - 1; i++)
+    {
+      if ((i & -i) == i)
+	continue;
+      for (d = i, p = 0; d; d >>= 1, p++)
+	if (d & 1)
+	  code[(1 << p) - 1] ^= data[j];
+      code[i - 1] = data[j];
+      j++;
+    }
+#ifdef USE_EXTRA_PARITY
+  for (i = 0; i < sizeof(data) / sizeof(*data); i++)
+    code[(1 << PARITY) - 1] ^= data[i];
+#endif
   
   /* Transmit. */
-  for (i = 0; i < 8; i++)
+  for (i = 0; i < sizeof(code) / sizeof(*code); i++)
     if (send_byte(code[i]))
       return -1;
   
@@ -371,8 +383,11 @@ int main(int argc, char* argv[])
  cleanup:
   snd_pcm_close(sound_handle);
   /* Mark aborted transmission. */
-  send_byte_with_ecc(CHAR_CANCEL);
-  send_byte_with_ecc(-CHAR_CANCEL);
+  if (rc)
+    {
+      send_byte_with_ecc(CHAR_CANCEL);
+      send_byte_with_ecc(-CHAR_CANCEL);
+    }
   return rc;
 }
 
