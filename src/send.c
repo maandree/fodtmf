@@ -177,6 +177,20 @@ static int send_byte(int c)
  */
 static int send_byte_with_ecc(int c)
 {
+#if PARITY < 2
+  if (send_byte(c))
+    return -1;
+# if PARITY == 1
+  if (send_byte(c))
+    return -1;
+# endif
+# if USE_EXTRA_PARITY == 1
+  if (send_byte(c))
+    return -1;
+# endif
+  return 0;
+  
+#else
   static int data[(1 << PARITY) - PARITY - 1];
   static int ptr = 0;
   static int code[(1 << PARITY) - 1 + USE_EXTRA_PARITY];
@@ -209,10 +223,10 @@ static int send_byte_with_ecc(int c)
       code[i - 1] = data[j];
       j++;
     }
-#ifdef USE_EXTRA_PARITY
+# if USE_EXTRA_PARITY == 1
   for (i = 0; i < sizeof(data) / sizeof(*data); i++)
     code[(1 << PARITY) - 1] ^= data[i];
-#endif
+# endif
   
   /* Transmit. */
   for (i = 0; i < sizeof(code) / sizeof(*code); i++)
@@ -220,6 +234,7 @@ static int send_byte_with_ecc(int c)
       return -1;
   
   return 0;
+#endif
 }
 
 
