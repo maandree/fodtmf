@@ -91,6 +91,40 @@ int send_byte(int c)
   return 0;
 }
 
+int send_byte_with_ecc(int c)
+{
+  static int cs[4];
+  static int ptr = 0;
+  int data[8];
+  int i;
+  
+  if (c < 0)
+    while (ptr < 4)
+      cs[ptr++] = -c;
+  else
+    cs[ptr++] = c;
+  
+  if (ptr < 4)
+    return 0;
+  
+  ptr = 0;
+  
+  data[0] = cs[0] ^ cs[1] ^ cs[3];
+  data[1] = cs[0] ^ cs[2] ^ cs[3];
+  data[2] = cs[0];
+  data[3] = cs[1] ^ cs[2] ^ cs[3];
+  data[4] = cs[1];
+  data[5] = cs[2];
+  data[6] = cs[3];
+  data[7] = cs[0] ^ cs[1] ^ cs[2] ^ cs[3];
+  
+  for (i = 0; i < 8; i++)
+    if (send_byte(data[i]))
+      return -1;
+  
+  return 0;
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -132,24 +166,28 @@ int main(int argc, char* argv[])
 	{
 	  c = buf[i];
 	  if ((c == CHAR_ESCAPE) || (c == CHAR_CANCEL) || (c == CHAR_END))
-	    if (send_byte(CHAR_ESCAPE))
+	    if (send_byte_with_ecc(CHAR_ESCAPE))
 	      goto snd_fail;
-	  if (send_byte(c))
+	  if (send_byte_with_ecc(c))
 	    goto snd_fail;
 	}
     }
-  if (send_byte(CHAR_END))
+  if (send_byte_with_ecc(CHAR_END))
+    goto snd_fail;
+  if (send_byte_with_ecc(-CHAR_END))
     goto snd_fail;
   
   snd_pcm_close(sound_handle);
   return 0;
  fail:
   perror(argv0);
-  send_byte(CHAR_CANCEL);
+  send_byte_with_ecc(CHAR_CANCEL);
+  send_byte_with_ecc(-CHAR_CANCEL);
   return 1;
  snd_fail:
   snd_pcm_close(sound_handle);
-  send_byte(CHAR_CANCEL);
+  send_byte_with_ecc(CHAR_CANCEL);
+  send_byte_with_ecc(-CHAR_CANCEL);
   return 1;
 }
 
