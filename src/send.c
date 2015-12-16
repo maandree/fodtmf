@@ -29,6 +29,10 @@
 #define DURATION     100     /* ms */ /* 100 ms → 10 Bd → 5 B/s */
 #define LATENCY      100000  /* µs */
 
+#define CHAR_ESCAPE  0x10  /* Data link escape */
+#define CHAR_CANCEL  0x18  /* Cancel */
+#define CHAR_END     0x04  /* End of transmission */
+
 
 #define N(buf)  (sizeof(buf) / sizeof(*buf))
 
@@ -92,6 +96,7 @@ int main(int argc, char* argv[])
 {
   int r;
   char buf[1024];
+  int c;
   ssize_t n, i;
   
   (void) argc;
@@ -124,17 +129,27 @@ int main(int argc, char* argv[])
       if (n == 0)
 	break;
       for (i = 0; i < n; i++)
-	if (send_byte(buf[i]))
-	  goto snd_fail;
+	{
+	  c = buf[i];
+	  if ((c == CHAR_ESCAPE) || (c == CHAR_CANCEL) || (c == CHAR_END))
+	    if (send_byte(CHAR_ESCAPE))
+	      goto snd_fail;
+	  if (send_byte(c))
+	    goto snd_fail;
+	}
     }
+  if (send_byte(CHAR_END))
+    goto snd_fail;
   
   snd_pcm_close(sound_handle);
   return 0;
  fail:
   perror(argv0);
+  send_byte(CHAR_CANCEL);
   return 1;
  snd_fail:
   snd_pcm_close(sound_handle);
+  send_byte(CHAR_CANCEL);
   return 1;
 }
 
