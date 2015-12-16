@@ -154,7 +154,6 @@ static int send_nibble(int n)
  */
 static int send_byte(int c)
 {
-  printf("%i\n", c);
   if (send_nibble((c >> 0) & 0x0F))  return -1;
   if (send_nibble((c >> 4) & 0x0F))  return -1;
   return 0;
