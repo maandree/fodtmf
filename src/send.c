@@ -45,7 +45,7 @@
 /**
  * Number of samples per tone.
  */
-#define N  SAMPLE_RATE / 1000 * DURATION
+#define N  (SAMPLE_RATE / 1000 * DURATION)
 
 
 
