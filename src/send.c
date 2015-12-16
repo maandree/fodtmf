@@ -23,6 +23,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <alloca.h>
+#include <getopt.h>
 #include <math.h> /* -lm */
 #include <alsa/asoundlib.h> /* dep: alsa-lib (pkg-config alsa) */
 
@@ -36,9 +38,6 @@
 #define SAMPLE_RATE  52000   /* Hz */
 #define DURATION     100     /* ms */ /* 100 ms → 10 Bd → 5 B/s */
 #define LATENCY      100000  /* µs */
-
-#define PARITY            2
-#define USE_EXTRA_PARITY  0
 
 
 
@@ -63,6 +62,42 @@ static snd_pcm_t* sound_handle = NULL;
  * Audio playback buffer for each nibble.
  */
 static UTYPE buffers[16][N];
+
+/**
+ * The number of parity tones in the hamming code.
+ */
+static int parity = 3;
+
+/**
+ * Whether to add an additional parity tone (of all
+ * data tones) in addition to those numerated by `parity`.
+ */
+static int use_extra_parity = 0;
+
+/**
+ * Whether to add redundancy frequencies in the tones.
+ */
+static int use_redundant_freq = 0;
+
+/**
+ * Data buffer used for error correcting code support.
+ */
+static int* data;
+
+/**
+ * Code buffer used for error correcting code support.
+ */
+static int* code;
+
+/**
+ * The number elements that can be stored in `data`.
+ */
+static int data_n;
+
+/**
+ * The number elements that can be stored in `code`.
+ */
+static int code_n;
 
 
 
@@ -111,10 +146,15 @@ static void init_buffers(void)
       buffer = buffers[j];
       get_freq(j, &low, &high);
       
-      for (i = 0; i < N; i++)
-	buffer[i] = (GENERATE_TONE(low * 1) + GENERATE_TONE(high * 1) + 
-		     GENERATE_TONE(low * 4) + GENERATE_TONE(high * 4)) *
-	  (SMAX / 4) - SMIN;
+      if (use_redundant_freq)
+	for (i = 0; i < N; i++)
+	  buffer[i] = (GENERATE_TONE(low * 1) + GENERATE_TONE(high * 1) + 
+		       GENERATE_TONE(low * 4) + GENERATE_TONE(high * 4)) *
+	    (SMAX / 4) - SMIN;
+      else
+	for (i = 0; i < N; i++)
+	  buffer[i] = (GENERATE_TONE(low * 1) + GENERATE_TONE(high * 1)) *
+	    (SMAX / 2) - SMIN;
     }
 }
 
@@ -154,6 +194,9 @@ static int send_nibble(int n)
  */
 static int send_byte(int c)
 {
+#ifdef DEBUG
+  fprintf(stderr, "%s: sending byte: %i\n", argv0, c);
+#endif
   if (send_nibble((c >> 0) & 0x0F))  return -1;
   if (send_nibble((c >> 4) & 0x0F))  return -1;
   return 0;
@@ -177,43 +220,42 @@ static int send_byte(int c)
  */
 static int send_byte_with_ecc(int c)
 {
-#if PARITY < 2
-  if (send_byte(c))
-    return -1;
-# if PARITY == 1
-  if (send_byte(c))
-    return -1;
-# endif
-# if USE_EXTRA_PARITY == 1
-  if (send_byte(c))
-    return -1;
-# endif
-  return 0;
-  
-#else
-  static int data[(1 << PARITY) - PARITY - 1];
   static int ptr = 0;
-  static int code[(1 << PARITY) - 1 + USE_EXTRA_PARITY];
   int i, j, d, p;
+  
+  if (parity < 2)
+    {
+      if (c < 0)
+	return 0;
+      if (send_byte(c))
+	return -1;
+      if (parity)
+	if (send_byte(c))
+	  return -1;
+      if (use_extra_parity)
+	if (send_byte(c))
+	  return -1;
+      return 0;
+    }
   
   /* Fill buffer. */
   if (c < 0)
     {
       if (ptr > 0)
-	while (ptr < sizeof(data) / sizeof(*data))
+	while (ptr < data_n)
 	  data[ptr++] = -c;
     }
   else
     data[ptr++] = c;
   
   /* Is it full? */
-  if (ptr < sizeof(data) / sizeof(*data))
+  if (ptr < data_n)
     return 0;
   ptr = 0;
   
   /* Hamming code. */
-  memset(code, 0, sizeof(code));
-  for (i = 1, j = 0; i <= (1 << PARITY) - 1; i++)
+  memset(code, 0, code_n * sizeof(*code));
+  for (i = 1, j = 0; i <= (1 << parity) - 1; i++)
     {
       if ((i & -i) == i)
 	continue;
@@ -223,18 +265,16 @@ static int send_byte_with_ecc(int c)
       code[i - 1] = data[j];
       j++;
     }
-# if USE_EXTRA_PARITY == 1
-  for (i = 0; i < sizeof(data) / sizeof(*data); i++)
-    code[(1 << PARITY) - 1] ^= data[i];
-# endif
+  if (use_extra_parity)
+    for (i = 0; i < data_n; i++)
+      code[(1 << parity) - 1] ^= data[i];
   
   /* Transmit. */
-  for (i = 0; i < sizeof(code) / sizeof(*code); i++)
+  for (i = 0; i < code_n; i++)
     if (send_byte(code[i]))
       return -1;
   
   return 0;
-#endif
 }
 
 
@@ -337,8 +377,8 @@ static int send_term(void)
 /**
  * Transmit a file over audio.
  * 
- * @param   argc  Not used for anything else than the process name.
- * @param   argv  Not used for anything else than the process name.
+ * @param   argc  The number of elements in `argv`.
+ * @param   argv  Command line arguments.
  * @return        0 on success, 1 on failure.
  */
 int main(int argc, char* argv[])
@@ -346,7 +386,19 @@ int main(int argc, char* argv[])
   struct sigaction act;
   int r, rc = 1;
   
+  /* Parse command line. */
   argv0 = argc ? argv[0] : "";
+  for (;;)
+    {
+      r = getopt (argc, argv, "fpr:");
+      if (r == -1)
+	break;
+      else if (r == 'f')  use_redundant_freq = 1;
+      else if (r == 'p')  use_extra_parity = 1;
+      else if (r == 'r')  parity = atoi(optarg);
+      else if (r != '?')
+	abort();
+    }
   
   /* Set up signal handling. */
   siginterrupt(SIGTERM, 1);
@@ -363,6 +415,11 @@ int main(int argc, char* argv[])
   
   /* Generate the tones to play. */
   init_buffers();
+  /* Generate buffers for error correcting code. */
+  data_n = (1 << parity) - parity - 1;
+  code_n = (1 << parity) - 1 + use_extra_parity;
+  data = alloca(data_n * sizeof(*data));
+  code = alloca(code_n * sizeof(*code));
   
   /* Set up audio. */
   r = snd_pcm_open(&sound_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
