@@ -104,6 +104,15 @@ static int data_n;
  */
 static int code_n;
 
+/**
+ * File descriptor to write the audio to (with any metadata)
+ * rather than sending it to the audio subsystem.
+ * 
+ * This is available for developers of the receiver.
+ * It is not intend to be used for anything else.
+ */
+static int output_fd = -1;
+
 
 
 /**
@@ -178,12 +187,28 @@ static int send_nibble(int n)
   snd_pcm_sframes_t frames;
   int r;
   
+  if (output_fd >= 0)
+    {
+      char* buf = (char*)buffer;
+      size_t ptr = 0;
+      ssize_t wrote;
+      while (ptr < N)
+	{
+	  wrote = write(output_fd, buf + ptr, N - ptr);
+	  if (wrote < 0)
+	    return -1;
+	  ptr += (size_t)write;
+	}
+      return 0;
+    }
+  
   r = frames = snd_pcm_writei(sound_handle, buffer, N);
   if (frames < 0)
     r = frames = snd_pcm_recover(sound_handle, r, 0 /* do not print error reason? */);
   if (r < 0)
     {
       fprintf(stderr, "%s: snd_pcm_writei: %s\n", argv0, snd_strerror(r));
+      errno = 0;
       return -1;
     }
   if ((r > 0) && ((size_t)r < N))
@@ -397,12 +422,13 @@ int main(int argc, char* argv[])
   argv0 = argc ? argv[0] : "";
   for (;;)
     {
-      r = getopt (argc, argv, "f:pr:");
+      r = getopt (argc, argv, "f:pr:o:");
       if (r == -1)
 	break;
       else if (r == 'f')  use_redundant_freq = 1, redundant_freq_mul = atof(optarg);
       else if (r == 'p')  use_extra_parity = 1;
       else if (r == 'r')  parity = atoi(optarg);
+      else if (r == 'o')  output_fd = atoi(optarg);
       else if (r != '?')
 	abort();
     }
@@ -429,6 +455,8 @@ int main(int argc, char* argv[])
   code = alloca(code_n * sizeof(*code));
   
   /* Set up audio. */
+  if (output_fd < 0)
+    goto no_audio;
   r = snd_pcm_open(&sound_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
   if (r < 0)
     return fprintf(stderr, "%s: snd_pcm_open: %s\n", *argv, snd_strerror(r)), 1;
@@ -437,6 +465,7 @@ int main(int argc, char* argv[])
 			 SAMPLE_RATE, 1 /* allow resampling? */, LATENCY);
   if (r < 0)
     return fprintf(stderr, "%s: snd_pcm_set_params: %s\n", *argv, snd_strerror(r)), 1;
+ no_audio:
   
   /* Send message. */
   if (isatty(STDIN_FILENO))
@@ -459,7 +488,8 @@ int main(int argc, char* argv[])
   if (errno)
     perror(argv0);
  cleanup:
-  snd_pcm_close(sound_handle);
+  if (output_fd >= 0)
+    snd_pcm_close(sound_handle);
   /* Mark aborted transmission. */
   if (rc)
     {
