@@ -80,6 +80,11 @@ static int use_extra_parity = 0;
 static int use_redundant_freq = 0;
 
 /**
+ * Frequencies multiple for the redundant frequencies.
+ */
+static double redundant_freq_mul = 0;
+
+/**
  * Data buffer used for error correcting code support.
  */
 static int* data;
@@ -148,12 +153,14 @@ static void init_buffers(void)
       
       if (use_redundant_freq)
 	for (i = 0; i < N; i++)
-	  buffer[i] = (GENERATE_TONE(low * 1) + GENERATE_TONE(high * 1) + 
-		       GENERATE_TONE(low * 4) + GENERATE_TONE(high * 4)) *
+	  buffer[i] = (GENERATE_TONE(low) +
+		       GENERATE_TONE(high) + 
+		       GENERATE_TONE(low * redundant_freq_mul) +
+		       GENERATE_TONE(high * redundant_freq_mul)) *
 	    (SMAX / 4) - SMIN;
       else
 	for (i = 0; i < N; i++)
-	  buffer[i] = (GENERATE_TONE(low * 1) + GENERATE_TONE(high * 1)) *
+	  buffer[i] = (GENERATE_TONE(low) + GENERATE_TONE(high)) *
 	    (SMAX / 2) - SMIN;
     }
 }
@@ -390,10 +397,10 @@ int main(int argc, char* argv[])
   argv0 = argc ? argv[0] : "";
   for (;;)
     {
-      r = getopt (argc, argv, "fpr:");
+      r = getopt (argc, argv, "f:pr:");
       if (r == -1)
 	break;
-      else if (r == 'f')  use_redundant_freq = 1;
+      else if (r == 'f')  use_redundant_freq = 1, redundant_freq_mul = atof(optarg);
       else if (r == 'p')  use_extra_parity = 1;
       else if (r == 'r')  parity = atoi(optarg);
       else if (r != '?')
