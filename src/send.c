@@ -21,6 +21,9 @@
 #include <stdint.h>
 #include <alsa/asoundlib.h> /* dep: alsa-lib (pkg-config alsa) */
 #include <signal.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdlib.h>
 
 
 
@@ -210,6 +213,102 @@ static int send_byte_with_ecc(int c)
 
 
 /**
+ * Transmit a chunk of bytes.
+ * 
+ * @param   buf  The chunk to transmit.
+ * @param   n    The number of bytes in the chunk.
+ * @return       0 on success, -1 on failure.
+ */
+static int send_chunk(char* buf, size_t n)
+{
+  size_t i;
+  int c;
+  
+  for (i = 0; i < n; i++)
+    {
+      c = buf[i];
+      if ((c == CHAR_ESCAPE) || (c == CHAR_CANCEL) || (c == CHAR_END))
+	if (send_byte_with_ecc(CHAR_ESCAPE))
+	  goto qfile;
+      if (send_byte_with_ecc(c))
+	goto qfile;
+    }
+  
+  return 0;
+ qfile:
+  errno = 0;
+ fail:
+  return -1;
+}
+
+
+/**
+ * Read all input from stdin and transmit it as it is being read.
+ * 
+ * @return  0 on success, -1 on failure.
+ */
+static int send_file(void)
+{
+  char buf[1024];
+  ssize_t n;
+  
+  for (;;)
+    {
+      n = read(STDIN_FILENO, buf, sizeof(buf));
+      if (n < 0)   goto fail;
+      if (n == 0)  break;
+      if (send_chunk(buf, (size_t)n))
+	goto fail;
+    }
+  
+  return 0;
+ fail:
+  return -1;
+}
+
+
+/**
+ * Read all input from stdin, and then transmit it.
+ * 
+ * @return  0 on success, -1 on failure.
+ */
+static int send_term(void)
+{
+  char* buf = NULL;
+  size_t size = 0;
+  size_t ptr = 0;
+  ssize_t n;
+  void* new;
+  int saved_errno;
+  
+  for (;;)
+    {
+      if (ptr == size)
+	{
+	  size = size ? (size << 1) : 128;
+	  new = realloc(buf, size);
+	  if (new == NULL)
+	    goto fail;
+	  buf = new;
+	}
+      n = read(STDIN_FILENO, buf + ptr, size - ptr);
+      if (n < 0)   goto fail;
+      if (n == 0)  break;
+      ptr += (size_t)n;
+    }
+  if (send_chunk(buf, ptr))
+    goto fail;
+  
+  return 0;
+ fail:
+  saved_errno = errno;
+  free(buf);
+  errno = saved_errno;
+  return -1;
+}
+
+
+/**
  * Transmit a file over audio.
  * 
  * @param   argc  Not used for anything else than the process name.
@@ -219,9 +318,7 @@ static int send_byte_with_ecc(int c)
 int main(int argc, char* argv[])
 {
   struct sigaction act;
-  char buf[1024];
-  int r, c, rc = 1;
-  ssize_t n, i;
+  int r, rc = 1;
   
   argv0 = argc ? argv[0] : "";
   
@@ -251,23 +348,16 @@ int main(int argc, char* argv[])
   if (r < 0)
     return fprintf(stderr, "%s: snd_pcm_set_params: %s\n", *argv, snd_strerror(r)), 1;
   
-  /* TODO: if reading from the terminal, wait until all input is fetched. */
   /* Send message. */
-  for (;;)
+  if (isatty(STDIN_FILENO))
     {
-      n = read(STDIN_FILENO, buf, sizeof(buf));
-      if (n < 0)   goto fail;
-      if (n == 0)  break;
-      for (i = 0; i < n; i++)
-	{
-	  c = buf[i];
-	  if ((c == CHAR_ESCAPE) || (c == CHAR_CANCEL) || (c == CHAR_END))
-	    if (send_byte_with_ecc(CHAR_ESCAPE))
-	      goto cleanup;
-	  if (send_byte_with_ecc(c))
-	    goto cleanup;
-	}
+      if (send_term())
+	goto fail;
     }
+  else
+    if (send_file())
+      goto fail;
+  
   /* Mark end of transmission. */
   if (send_byte_with_ecc(CHAR_END))   goto cleanup;
   if (send_byte_with_ecc(-CHAR_END))  goto cleanup;
@@ -276,7 +366,8 @@ int main(int argc, char* argv[])
   rc = 0;
   goto cleanup;
  fail:
-  perror(argv0);
+  if (errno)
+    perror(argv0);
  cleanup:
   snd_pcm_close(sound_handle);
   /* Mark aborted transmission. */
