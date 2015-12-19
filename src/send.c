@@ -455,11 +455,13 @@ int main(int argc, char* argv[])
   code = alloca(code_n * sizeof(*code));
   
   /* Set up audio. */
-  if (output_fd < 0)
+  if (output_fd >= 0)
     goto no_audio;
   r = snd_pcm_open(&sound_handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
   if (r < 0)
     return fprintf(stderr, "%s: snd_pcm_open: %s\n", *argv, snd_strerror(r)), 1;
+  if (sound_handle == NULL)
+    perror("snd_pcm_open");
   /* Configure audio. */
   r = snd_pcm_set_params(sound_handle, FORMAT, SND_PCM_ACCESS_RW_INTERLEAVED, 1 /* channels */,
 			 SAMPLE_RATE, 1 /* allow resampling? */, LATENCY);
