@@ -1,2 +1,91 @@
-File over dual-tone multi-frequency signaling
+NAME
+	fodtmf - Transfer files over audio.
+
+ETYMOLOGY
+	File over DTMF (dual-tone multi-frequency signaling)
+	~    ~    ~~~~  ~    ~    ~     ~
+
+SYNOPSIS
+	fodtmf-send [OPTIONS] [< FILE]
+
+DESCRIPTION
+	fodtmf-send shall send the file FILE over audio
+	encoded with dual-tone multi-frequency signaling.
+
+	The message will be enhanced with hamming code
+	for error correction, and optionally with
+	redundant frequencies to help combat noice in
+	the environment.
+
+	At the end of the transfer, an 'end of transmission'
+	byte will be send. If the message is cancelled, a
+	'cancel' byte will be send. The end of the message
+	will be padded with this byte until a full error
+	correcting code has been constructed.
+
+	For any 'data link escape' byte, any 'end of
+	transmission' byte, and any 'cancel' byte in the
+	transmitted file, a 'data link escape' byte will
+	be inserted directly before it.
+
+OPTIONS
+	-f MULTIPLE
+		In addition to any tone with the frequency
+		F, also send, simultaneously a tone with the
+		frquencies F times MULTIPLE. This is a
+		rundundant to to improve the reliability of
+		the transfer. Rundundant tones are not added
+		by default because they make the tones less
+		pleasant.
+
+	-r N
+		In each error correcting code, include N
+		parity bytes. By default, this is three. The
+		higher this value is, the less redundancy the
+		code will have. The number of bytes per code is
+		calculated by 2^N - 1, and the number of data
+		bytes per code is calculated by 2^N - N - 1.
+
+		There are two exceptional values, that cases
+		the message to be transferred without any
+		hamming code for error correction:
+
+		0	Do not include any redundancy at all,
+			apart from any specified using the
+			flag -p.
+
+		1	Only one redundancy byte per code,
+			apart from any specified using the
+			flag -p.
+
+		This value must be non-negative.
+
+		If this value, plus 1 if -p is used, equals
+		1, the receiver may be able to spot errors,
+		but has no chance of repairing them, unless
+		additional error correction mechanisms are
+		added. If it equals 0, the receiver will
+		be unable to spot errors unless additional
+		error correction mechanisms are added.
+
+	-p
+		Include one extra parity byte per error
+		correcting code. This byte will be the
+		parity of all data bytes.
+
+	-o FD
+		Write the audio to file descriptor FD rather
+		than playing it back. This is intended for
+		development purposes only. The written file
+		will not contain any metadata to hint how
+		it is encoded and how it should be played
+		back.
+
+	Each option can only be used once.
+
+RATIONALE
+	I really don't know precisely why. But it sounded fun.
+
+SEE ALSO
+	scp(1), nc(1)
 
