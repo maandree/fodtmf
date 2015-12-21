@@ -110,6 +110,13 @@ NOTES
 	But note well, which compresion algorithm is most
 	efficient depends on the file.
 
+FUTURE DIRECTIONS
+	afodtmf (Advanced File over DTMF) will be written. It
+	will make the computers communicate with each other
+	bidirectionally (limited to one-to-one communication)
+	to repair errors that could not be correct using
+	the error-correcting code.
+
 RATIONALE
 	I really don't know precisely why. But it sounded fun.
 
