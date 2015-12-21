@@ -94,7 +94,8 @@ OPTIONS
 
 	-s FD
 		Read input from file descriptor FD rather
-		than from the microphone.
+		than from the microphone. This is intended
+		for development purposes only.
 		Only available for fodtmf-recv.
 
 	Each option can only be used once.
