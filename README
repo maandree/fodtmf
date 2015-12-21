@@ -83,6 +83,16 @@ OPTIONS
 
 	Each option can only be used once.
 
+NOTES
+	It may be a good idea to compress the file before
+	transmitting it. For example
+
+		xz -e9 < your-file | fodtmf-send    ## sender
+		fodtmf-recv | xz -d > your-file     ## receive
+
+	But note well, which compresion algorithm is most
+	efficient depends on the file.
+
 RATIONALE
 	I really don't know precisely why. But it sounded fun.
 
