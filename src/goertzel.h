@@ -29,6 +29,6 @@ struct goertzel_state
 };
 
 
-void goertzel_init(double freq, double rate, struct goertzel_state* restrict state);
-double goertzel(size_t n, const uint32_t* restrict samples, struct goertzel_state* restrict state);
+void goertzel_init(struct goertzel_state* restrict state, double freq, double rate);
+double goertzel(struct goertzel_state* restrict state, const uint32_t* restrict samples, size_t n);
 
