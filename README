@@ -8,6 +8,8 @@ ETYMOLOGY
 SYNOPSIS
 	fodtmf-send [OPTIONS] [< FILE]
 
+	fodtmf-recv [OPTIONS] [> FILE]
+
 DESCRIPTION
 	fodtmf-send shall send the file FILE over audio
 	encoded with dual-tone multi-frequency signaling.
@@ -27,6 +29,9 @@ DESCRIPTION
 	transmission' byte, and any 'cancel' byte in the
 	transmitted file, a 'data link escape' byte will
 	be inserted directly before it.
+
+	fodtmf-recv shall receive a file sent using
+	fodtmf-send.
 
 OPTIONS
 	-f MULTIPLE
@@ -74,12 +79,23 @@ OPTIONS
 		parity of all data bytes.
 
 	-o FD
+		For fodtmf-send:
 		Write the audio to file descriptor FD rather
 		than playing it back. This is intended for
 		development purposes only. The written file
 		will not contain any metadata to hint how
 		it is encoded and how it should be played
 		back.
+
+		For fodtmf-recv:
+		Write a list, of all codes (by index) that
+		where not properly received and could not
+		be corrected, to file descriptor FD.
+
+	-s FD
+		Read input from file descriptor FD rather
+		than from the microphone.
+		Only available for fodtmf-recv.
 
 	Each option can only be used once.
 
