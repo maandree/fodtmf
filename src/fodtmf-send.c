@@ -1,5 +1,5 @@
 /**
- * Copyright © 2015  Mattias Andrée (maandree@member.fsf.org)
+ * Copyright © 2015  Mattias Andrée (m@maandree.se)
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -490,14 +490,14 @@ int main(int argc, char* argv[])
   if (errno)
     perror(argv0);
  cleanup:
-  if (output_fd >= 0)
-    snd_pcm_close(sound_handle);
   /* Mark aborted transmission. */
   if (rc)
     {
       send_byte_with_ecc(CHAR_CANCEL);
       send_byte_with_ecc(-CHAR_CANCEL);
     }
+  if (output_fd >= 0)
+    snd_pcm_close(sound_handle);
   return rc;
 }
 
